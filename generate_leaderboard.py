@@ -295,8 +295,8 @@ def generate_leaderboard_html(results: List[Dict[str, Any]], output_path: Path):
                         <td class="{rank_class}">#{i}</td>
                         <td class="student-name">{result['student']}</td>
                         <td class="score">{result['combined_score']:.4f}</td>
-                        <td class="score {prey_class}">{result['prey_score']:.4f} ± {result.get('prey_std', 0):.4f}</td>
-                        <td class="score {predator_class}">{result['predator_score']:.4f} ± {result.get('predator_std', 0):.4f}</td>
+                        <td class="score {prey_class}">{result['prey_score']:.4f}</td>
+                        <td class="score {predator_class}">{result['predator_score']:.4f}</td>
                         <td class="timestamp">{timestamp}</td>
                     </tr>
 """
