@@ -1,0 +1,11 @@
+# Core dependencies
+# Note: Installing pygame separately first, then pettingzoo without pygame extra
+pygame>=2.6.0  # Python 3.13 compatible version
+pettingzoo==1.24.3  # Without [mpe] to avoid pygame version conflict
+torch>=2.0.0
+numpy>=1.24.0
+gymnasium>=0.29.0
+
+# Optional but recommended
+matplotlib>=3.7.0
+tensorboard>=2.13.0

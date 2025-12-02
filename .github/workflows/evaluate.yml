@@ -1,0 +1,231 @@
+name: Evaluate Student Submission
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'submissions/**'
+
+permissions:
+  contents: write
+  pull-requests: write
+  pages: write
+  id-token: write
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v46
+        with:
+          files: |
+            submissions/**
+      
+      - name: Identify submission directory
+        id: submission
+        run: |
+          # Get the list of changed files
+          changed_files="${{ steps.changed-files.outputs.all_changed_files }}"
+          
+          # Extract submission directory
+          for file in $changed_files; do
+            if [[ $file == submissions/* ]]; then
+              # Extract username from path: submissions/<username>/...
+              username=$(echo $file | cut -d'/' -f2)
+              submission_dir="submissions/$username"
+              echo "username=$username" >> $GITHUB_OUTPUT
+              echo "submission_dir=$submission_dir" >> $GITHUB_OUTPUT
+              echo "Found submission from: $username"
+              break
+            fi
+          done
+          
+          # Verify we found a submission
+          if [ -z "$username" ]; then
+            echo "Error: No valid submission found in changed files"
+            exit 1
+          fi
+      
+      - name: Validate submission structure
+        run: |
+          submission_dir="${{ steps.submission.outputs.submission_dir }}"
+          
+          # Check if agent.py exists
+          if [ ! -f "$submission_dir/agent.py" ]; then
+            echo "Error: agent.py not found in $submission_dir"
+            exit 1
+          fi
+          
+          # Check for only allowed files
+          for file in $submission_dir/*; do
+            filename=$(basename "$file")
+            if [[ ! "$filename" =~ ^(agent\.py|.*\.pth)$ ]]; then
+              echo "Error: Invalid file found: $filename"
+              echo "Only agent.py and .pth files are allowed"
+              exit 1
+            fi
+          done
+          
+          echo "✓ Submission structure is valid"
+      
+      - name: Checkout private agents (from secrets or protected branch)
+        run: |
+          # Create private_agents directory
+          mkdir -p private_agents
+          
+          # In production, you would fetch private agents from:
+          # 1. A separate private repository
+          # 2. GitHub Secrets
+          # 3. A protected branch
+          # 4. Encrypted files
+          
+          # For now, we'll check if they exist in a protected location
+          if [ -d "private_agents" ] && [ -f "private_agents/prey_agent.py" ] && [ -f "private_agents/predator_agent.py" ]; then
+            echo "✓ Private agents found"
+          else
+            echo "Warning: Private agents not found. You need to set these up separately."
+            echo "Creating placeholder private agents for testing..."
+            
+            # Create placeholder agents (REPLACE THIS IN PRODUCTION)
+            cat > private_agents/prey_agent.py << 'EOL'
+import numpy as np
+
+class StudentAgent:
+    def __init__(self, agent_type: str):
+        self.agent_type = agent_type
+    
+    def get_action(self, observation, agent_id: str):
+        # Placeholder: random action
+        return np.random.uniform(-1, 1, size=5)
+EOL
+            
+            cp private_agents/prey_agent.py private_agents/predator_agent.py
+          fi
+      
+      - name: Run evaluation
+        id: evaluate
+        run: |
+          submission_dir="${{ steps.submission.outputs.submission_dir }}"
+          username="${{ steps.submission.outputs.username }}"
+          
+          # Set a unique seed for this evaluation (based on PR number)
+          seed=$((42 + ${{ github.event.pull_request.number }}))
+          
+          # Create results directory
+          mkdir -p results
+          
+          # Run evaluation
+          output_file="results/${username}_$(date +%s).json"
+          
+          python evaluate.py \
+            --submission-dir "$submission_dir" \
+            --private-agents-dir "private_agents" \
+            --output "$output_file" \
+            --seed $seed \
+            --episodes 100
+          
+          echo "output_file=$output_file" >> $GITHUB_OUTPUT
+      
+      - name: Generate leaderboard
+        run: |
+          python generate_leaderboard.py \
+            --results-dir results \
+            --output docs/index.html
+      
+      - name: Extract scores for PR comment
+        id: scores
+        run: |
+          output_file="${{ steps.evaluate.outputs.output_file }}"
+          
+          if [ -f "$output_file" ]; then
+            prey_score=$(jq -r '.prey_score' "$output_file")
+            prey_std=$(jq -r '.prey_std' "$output_file")
+            predator_score=$(jq -r '.predator_score' "$output_file")
+            predator_std=$(jq -r '.predator_std' "$output_file")
+            
+            echo "prey_score=$prey_score" >> $GITHUB_OUTPUT
+            echo "prey_std=$prey_std" >> $GITHUB_OUTPUT
+            echo "predator_score=$predator_score" >> $GITHUB_OUTPUT
+            echo "predator_std=$predator_std" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Commit and push results
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          git add results/
+          git add docs/index.html
+          
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Add evaluation results for ${{ steps.submission.outputs.username }}"
+            git push origin HEAD:main
+          fi
+      
+      - name: Comment on PR with results
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const username = '${{ steps.submission.outputs.username }}';
+            const preyScore = '${{ steps.scores.outputs.prey_score }}';
+            const preyStd = '${{ steps.scores.outputs.prey_std }}';
+            const predatorScore = '${{ steps.scores.outputs.predator_score }}';
+            const predatorStd = '${{ steps.scores.outputs.predator_std }}';
+            
+            const body = `## 🎯 Evaluation Results
+            
+            **Submission by:** @${username}
+            
+            ### Scores
+            
+            | Agent Type | Score | Std Dev |
+            |------------|-------|---------|
+            | 🐰 Prey | ${parseFloat(preyScore).toFixed(4)} | ±${parseFloat(preyStd).toFixed(4)} |
+            | 🦁 Predator | ${parseFloat(predatorScore).toFixed(4)} | ±${parseFloat(predatorStd).toFixed(4)} |
+            
+            ### Details
+            - **Episodes:** 100
+            - **Environment:** Simple Tag (PettingZoo MPE)
+            - **Combined Score:** ${((parseFloat(preyScore) + parseFloat(predatorScore)) / 2).toFixed(4)}
+            
+            ### Next Steps
+            
+            ✅ Your submission has been evaluated!
+            
+            Check the [live leaderboard](https://${context.repo.owner}.github.io/${context.repo.repo}/) to see your ranking.
+            
+            Want to improve your score? Feel free to submit a new PR with an updated agent!
+            
+            ---
+            *This evaluation was performed automatically. Scores represent average rewards over 100 episodes against private reference implementations.*
+            `;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
