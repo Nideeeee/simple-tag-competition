@@ -49,6 +49,8 @@ private_agents/
 private/
 seeds.json
 config.example.json
+LAUNCH_CHECKLIST.md
+SETUP.md
 
 # Evaluation results (tracked separately)
 # results/ is tracked for leaderboard
