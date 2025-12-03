@@ -280,8 +280,8 @@ def generate_leaderboard_html(results: List[Dict[str, Any]], output_path: Path):
         
         timestamp = datetime.fromisoformat(result["timestamp"]).strftime("%Y-%m-%d %H:%M")
         
-    total_episodes = sum(r.get("num_episodes", 0) for r in results)
-    total_students = len(best_results)  # Count unique students with best scores
+        html += f"""
+                    <tr>
                         <td class="{rank_class}">#{i}</td>
                         <td class="student-name">{result['student']}</td>
                         <td class="score {predator_class}">{result.get('predator_score', 0):.4f}</td>
@@ -290,7 +290,7 @@ def generate_leaderboard_html(results: List[Dict[str, Any]], output_path: Path):
 """
     
     total_episodes = sum(r.get("num_episodes", 0) for r in results)
-    total_students = len(set(r["student"] for r in results))
+    total_students = len(best_results)  # Count unique students with best scores
     
     html += f"""
                 </tbody>
