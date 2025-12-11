@@ -1,11 +1,11 @@
 name: Evaluate Student Submission
 
 on:
-  pull_request:
+  pull_request_target:   
     types: [opened, synchronize, reopened]
-    paths:
+    paths: 
       - 'submissions/**'
-
+      
 permissions:
   contents: write
   pull-requests: write
