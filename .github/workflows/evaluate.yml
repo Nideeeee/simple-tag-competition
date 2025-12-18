@@ -1,26 +1,31 @@
 name: Evaluate Student Submission
 
 on:
-  pull_request:
+  pull_request_target:   
     types: [opened, synchronize, reopened]
-    paths:
+    paths: 
       - 'submissions/**'
-
+      
 permissions:
   contents: write
   pull-requests: write
   pages: write
   id-token: write
+  actions: write
 
 jobs:
   evaluate:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
+        with: 
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           persist-credentials: true
       
@@ -137,9 +142,18 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           
-          # Checkout main branch
+          # Save generated files to temp location
+          mkdir -p /tmp/evaluation_results
+          cp -r results/* /tmp/evaluation_results/ || true
+          cp docs/index.html /tmp/index.html || true
+          
+          # Checkout main branch (force to overwrite any conflicts)
           git fetch origin main
-          git checkout main
+          git checkout -f main
+          
+          # Copy generated files back
+          cp -r /tmp/evaluation_results/* results/
+          cp /tmp/index.html docs/index.html
           
           git add results/
           git add docs/index.html
@@ -150,6 +164,18 @@ jobs:
             git commit -m "Add evaluation results for ${{ steps.submission.outputs.username }}"
             git push origin main
           fi
+      
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+      
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: 'docs'
+      
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
       
       - name: Comment on PR with results
         uses: actions/github-script@v7
